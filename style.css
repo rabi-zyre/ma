@@ -1,0 +1,355 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  color: #fff;
+  overflow-x: hidden;
+  height: 100%;
+}
+
+body {
+  cursor: auto; 
+}
+#cursor {
+  position: fixed;
+  pointer-events: none;
+  font-size: 22px;
+  font-family: "Noto Serif JP", serif;
+  color: white;
+  mix-blend-mode: difference;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  display: none; 
+}
+
+canvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  z-index: 10;
+  pointer-events: none;
+}
+#overlay button {
+  pointer-events: auto;
+}
+
+#godai {
+  justify-self: center;
+  margin-top: 16px;
+  display: flex;
+  gap: 20px;
+  z-index: 11;
+  pointer-events: auto;
+}
+#godai button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #333;
+  cursor: pointer;
+  transition: color 0.35s ease, transform 0.25s ease;
+  font-family: "Montserrat", sans-serif;
+  letter-spacing: 2px;
+}
+#godai button.active {
+  color: #fff;
+  transform: scale(1.18);
+}
+
+#center {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+#subtitle {
+  position: absolute;
+  top: calc(50% + 170px);
+  left: 49.8%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: "Montserrat", sans-serif;
+  opacity: 0.95;
+  z-index: 12;
+  pointer-events: none;
+}
+#poem {
+  position: absolute;
+  top: 40%;
+  left: 50.9%;
+  transform: translate(-50%, -50%) scale(0.7);
+  font-size: 48px;
+  line-height: 1.6;
+  text-align: center;
+  white-space: pre-line;
+  font-family: "Noto Serif JP", serif;
+  opacity: 0;
+  z-index: 12;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+.poem-vertical {
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  justify-content: center;
+  align-items: flex-start;
+}
+.poem-vertical .col {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-size: 36px;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+}
+
+#nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  z-index: 11;
+  pointer-events: auto;
+  font-family: "Montserrat", sans-serif;
+}
+#nav button {
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.25s ease;
+}
+#nav button:hover { color: #fff; }
+#nav .center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 768px) {
+  #nav {
+    justify-content: center;
+    padding: 0;
+  }
+  #nav .left,
+  #nav .right {
+    display: none;
+  }
+  #nav .center {
+    position: static;
+    transform: none;
+    font-size: 14px;
+  }
+}
+
+#scrolltrack { position: relative; z-index: 1; }
+.spacer { height: 100vh; }
+
+.lil-gui {
+  position: fixed !important;
+  top: 50% !important;
+  right: 20px !important;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.9) !important;
+  border: 1px solid white !important;
+  border-radius: 8px !important;
+  padding: 20px !important;
+  font-family: "Montserrat", sans-serif;
+  font-size: 14px;
+  color: white !important;
+  width: 260px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  z-index: 9999;
+}
+
+.lil-gui .title,
+.lil-gui .close-button {
+  display: none !important;
+}
+
+.lil-gui .controller {
+  border-left: none !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  margin-bottom: 18px !important;
+}
+
+.lil-gui .controller::before,
+.lil-gui .controller::after,
+.lil-gui .controller > *::before,
+.lil-gui .controller > *::after {
+  display: none !important;
+  content: none !important;
+}
+
+.lil-gui .controller .name {
+  font-family: "Montserrat", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: normal !important;
+  color: white !important;
+  text-align: left !important;
+  margin-bottom: 6px !important;
+  line-height: 1 !important;
+}
+
+.lil-gui input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 !important;
+  height: 14px !important;
+  border-radius: 20px !important;
+  background: #222 !important;
+  cursor: pointer !important;
+  margin: 0 !important;
+}
+.lil-gui input[type="range"]::-webkit-slider-runnable-track {
+  background: #222 !important;
+  height: 14px !important;
+  border-radius: 20px !important;
+}
+.lil-gui input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  border: none !important;
+  margin-top: -1px !important;
+}
+.lil-gui input[type="range"]::-moz-range-track {
+  background: #222 !important;
+  height: 14px !important;
+  border-radius: 20px !important;
+}
+.lil-gui input[type="range"]::-moz-range-thumb {
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  border: none !important;
+}
+
+.lil-gui .controller.number .widget {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+.lil-gui .controller.number input[type="number"] {
+  width: 60px !important;
+  background: #ddd !important;
+  color: #000 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  font-family: "Montserrat", sans-serif !important;
+  font-size: 14px !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+.lil-gui .controller.number input::-webkit-outer-spin-button,
+.lil-gui .controller.number input::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+
+.lil-gui input[type="color"] {
+  border: none !important;
+  width: 100% !important;
+  height: 20px !important;
+  padding: 0 !important;
+  cursor: pointer !important;
+  border-radius: 6px !important;
+  background: none !important;
+}
+
+.lil-gui input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0 !important;
+  border-radius: 6px !important;
+}
+.lil-gui input[type="color"]::-webkit-color-swatch {
+  border: none !important;
+  border-radius: 6px !important;
+}
+
+.lil-gui input[type="color"]::-moz-color-swatch {
+  border: none !important;
+  border-radius: 6px !important;
+}
+
+.lil-gui .controller .widget span {
+  color: #fff !important;
+  font-weight: normal !important;
+}
+
+.lil-gui input,
+.lil-gui select {
+  box-sizing: border-box !important;
+}
+
+.custom-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.25s ease;
+}
+.custom-close-btn:hover {
+  opacity: 0.6;
+}
+
+#translation-wrapper {
+  position: absolute;
+  top: 50%;
+  left: 12%;
+  transform: translate(-50%, -50%);
+  padding: 12px 20px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.5); 
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  white-space: pre-line;
+  text-align: left;
+  z-index: 50;
+  font-family: "Montserrat", sans-serif;
+  font-size: 14px;
+}
+
+#poem:hover + #translation-wrapper,
+#translation-wrapper:hover {
+  opacity: 1;
+  color: #fff;
+  border-color: rgba(255,255,255,0.3);
+  background: rgba(0,0,0,0.5);
+}
+/* Fisheye effect */
+#translation-wrapper.fisheye {
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 1000;
+  pointer-events: auto;
+}
