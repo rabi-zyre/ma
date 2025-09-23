@@ -1,4 +1,3 @@
-// title settings
 const FONT_PATH = 'fonts/NotoSerifJP-Regular.ttf';
 const TEXT = '間';
 const BASE_SIZE = 300;
@@ -13,7 +12,7 @@ const HI_COLOR = [255, 255, 255];
 
 let font;
 let points = [];
-let scaleFactor = 1;
+let scaleFactor = 0; 
 let globalOpacity = 1;
 
 const HAIKUS = [
@@ -63,16 +62,19 @@ let poem5Points = [];
 
 let cursorEl;
 
-// ====== END MODE STATE ======
 let endMode = false;
 let mergedPoints = [];
 let blackholeProgress = 0;
 let showEndText = false;
 
-let endFade = 1;        // <-- NEW: điều khiển fade khi nhấn SPACE
+let endFade = 1;     
 let fadingOut = false;
 
 let endScreen = false;
+let completedPoems = []; 
+let scrollLocked = false; 
+
+let instructionModalVisible = false;
 
 function preload() {
   font = loadFont(FONT_PATH);
@@ -201,6 +203,9 @@ function setup() {
   subtitleEl = document.getElementById('subtitle');
   godaiButtons = document.querySelectorAll('#godai button');
 
+  // Setup godai navigation tooltips after buttons are available
+  setupGodaiTooltips();
+
   gsap.registerPlugin(ScrollTrigger);
 
   ScrollTrigger.create({
@@ -210,7 +215,7 @@ function setup() {
     scrub: true,
     onUpdate: (self) => {
       const p = gsap.parseEase("power2.out")(self.progress);
-      scaleFactor = 0 + p * 0.6;
+      scaleFactor = 0 + p * 0.6; // This will animate from 0 to 0.6
       globalOpacity = 1;
       subtitleEl.style.opacity = 1;
     }
@@ -247,9 +252,62 @@ function setup() {
       trigger: `#sec-${i}`,
       start: 'top center',
       end: 'bottom center',
-      onEnter: () => setPoem(item),
-      onEnterBack: () => setPoem(item)
+      onEnter: () => {
+        // Only set poem if it's different from current poem
+        if (canAccessPoem(i)) {
+          if (currentPoemGodai !== i) {
+            setPoem(item);
+          }
+        } else {
+          // Prevent access to locked poem - scroll back immediately
+          console.log(`Access denied to poem ${i}, scrolling back...`);
+          setTimeout(() => {
+            scrollToLastAccessiblePoem();
+          }, 50);
+        }
+      },
+      onEnterBack: () => {
+        // Only set poem if it's different from current poem
+        if (canAccessPoem(i)) {
+          if (currentPoemGodai !== i) {
+            setPoem(item);
+          }
+        } else {
+          // Prevent access to locked poem - scroll back immediately
+          console.log(`Access denied to poem ${i} (back), scrolling back...`);
+          setTimeout(() => {
+            scrollToLastAccessiblePoem();
+          }, 50);
+        }
+      }
     });
+  });
+
+  // Add scroll lock functionality
+  let isScrolling = false;
+  
+  window.addEventListener('wheel', (e) => {
+    if (shouldBlockScroll()) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }, { passive: false });
+
+  window.addEventListener('touchmove', (e) => {
+    if (shouldBlockScroll()) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
+    if (shouldBlockScroll() && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'PageDown' || e.key === 'PageUp' || e.key === ' ')) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
   });
 
   ScrollTrigger.create({
@@ -262,6 +320,8 @@ function setup() {
 
   poemEl.style.opacity = 0;
   
+  // Create instruction button
+  createInstructionButton();
 }
 
 function draw() {
@@ -542,6 +602,11 @@ function keyPressed() {
         label: '地',
         ...shapeSettings
       });
+      
+      // Mark poem as completed
+      if (!completedPoems.includes(0)) {
+        completedPoems.push(0);
+      }
     } else if (currentPoemGodai === 1) {
       const cx = width / 2;
       const cy = height * 0.64;
@@ -557,6 +622,11 @@ function keyPressed() {
       });
 
       shapes.forEach(s => { if (s.type === 'rect') s.hidden = false; });
+      
+      // Mark poem as completed
+      if (!completedPoems.includes(1)) {
+        completedPoems.push(1);
+      }
     } else if (currentPoemGodai === 2) {
       const n = poemPoints.length || 400;
       const customPts = buildCustomShape3Points(n);
@@ -571,6 +641,11 @@ function keyPressed() {
       shapes.forEach(s => {
         if (s.type === 'rect' || s.type === 'circle') s.hidden = false;
       });
+      
+      // Mark poem as completed
+      if (!completedPoems.includes(2)) {
+        completedPoems.push(2);
+      }
     } else if (currentPoemGodai === 3) {
       const n = poemPoints.length || 400;
       const customPts = buildBubblyRectPoints(n);
@@ -585,6 +660,11 @@ function keyPressed() {
       shapes.forEach(s => {
         if (['rect','circle','custom3'].includes(s.type)) s.hidden = false;
       });
+      
+      // Mark poem as completed
+      if (!completedPoems.includes(3)) {
+        completedPoems.push(3);
+      }
     } else if (currentPoemGodai === 4) {
       const n = poemPoints.length || 500;
       shapes.push({
@@ -596,8 +676,11 @@ function keyPressed() {
       });
 
       shapes.forEach(s => s.hidden = false);
-
-      if (nav) nav.innerHTML = `<button class="center">press E then M to end the journey</button>`;
+      
+      // Mark poem as completed
+      if (!completedPoems.includes(4)) {
+        completedPoems.push(4);
+      }
     }
 
     poemPoints = [];
@@ -968,8 +1051,7 @@ function activateGodai(index) {
 
 function mousePressed() {
   if (drawFirstPoem && !showPoints) {
-    showPoints = true;
-
+    // Check if mouse is actually over the poem text area
     const cols = firstPoemLines.length || 1;
     const centerX = width / 2;
     const colGap = POEM_COL_GAP;
@@ -980,91 +1062,199 @@ function mousePressed() {
     const totalHeight = maxColHeight + (cols - 1) * POEM_STEP_DOWN;
     const groupTop = height / 2 - totalHeight / 2;
 
-    let allPts = [];
-
+    // Check if mouse is within the poem text bounds
+    let mouseOverPoem = false;
+    const textMargin = 50; // Margin around text for easier clicking
+    
     for (let i = 0; i < cols; i++) {
       const line = firstPoemLines[i];
       const colX = centerX + (i - (cols - 1) / 2) * colGap;
       const topY = groupTop + (i * POEM_STEP_DOWN);
-
-      for (let j = 0; j < line.length; j++) {
-        const ch = line[j];
-        if (ch.trim() === "") continue;
-
-        const pts = buildPoemPoints([ch], font, fontSize, topY + j * fontSize, colX, pointSettings);
-        allPts.push(...pts);
+      const bottomY = topY + line.length * fontSize;
+      
+      // Check if mouse is within this column's bounds (with margin)
+      if (mouseX >= colX - textMargin && 
+          mouseX <= colX + textMargin && 
+          mouseY >= topY - textMargin && 
+          mouseY <= bottomY + textMargin) {
+        mouseOverPoem = true;
+        break;
       }
     }
 
-    poemPoints = allPts;
-    setupGUI();
+    // Only trigger if mouse is actually over the poem area
+    if (mouseOverPoem) {
+      showPoints = true;
+
+      let allPts = [];
+
+      for (let i = 0; i < cols; i++) {
+        const line = firstPoemLines[i];
+        const colX = centerX + (i - (cols - 1) / 2) * colGap;
+        const topY = groupTop + (i * POEM_STEP_DOWN);
+
+        for (let j = 0; j < line.length; j++) {
+          const ch = line[j];
+          if (ch.trim() === "") continue;
+
+          const pts = buildPoemPoints([ch], font, fontSize, topY + j * fontSize, colX, pointSettings);
+          allPts.push(...pts);
+        }
+      }
+
+      poemPoints = allPts;
+      setupGUI();
+    }
   }
 }
 
 function setupGUI() {
   if (gui) return;
 
-  gui = new lil.GUI({ width: 220 });
-  gui.domElement.classList.add("custom-gui");
+  const guiContainer = document.createElement('div');
+  guiContainer.id = 'custom-gui-container';
+  guiContainer.style.position = 'fixed';
+  guiContainer.style.top = '50%';
+  guiContainer.style.right = '20px';
+  guiContainer.style.transform = 'translateY(-50%)';
+  guiContainer.style.width = '300px';
+  guiContainer.style.backgroundColor = 'rgba(20, 20, 20, 0.95)';
+  guiContainer.style.borderRadius = '12px';
+  guiContainer.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+  guiContainer.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.1)';
+  guiContainer.style.zIndex = '10000';
+  guiContainer.style.fontFamily = "'Raleway', sans-serif";
+  guiContainer.style.opacity = '0';
+  guiContainer.style.transition = 'opacity 0.3s ease';
 
-  gui.add(pointSettings, 'sampleFactor', 0.05, 1.0, 0.05)
-    .name('Density')
-    .onChange(() => {
-      if (!applied && drawFirstPoem && showPoints) {
-        const cols = firstPoemLines.length || 1;
-        const centerX = width / 2;
-        const colGap = POEM_COL_GAP;
-        const fontSize = POEM_FONT_SIZE;
+  const content = document.createElement('div');
+  content.style.padding = '20px';
+  content.style.position = 'relative';
 
-        let colHeights = firstPoemLines.map(line => line.length * fontSize);
-        const maxColHeight = Math.max(...colHeights);
-        const totalHeight = maxColHeight + (cols - 1) * POEM_STEP_DOWN;
-        const groupTop = height / 2 - totalHeight / 2;
+  const title = document.createElement('h2');
+  title.innerHTML = 'Settings';
+  title.style.color = 'white';
+  title.style.fontFamily = "'Raleway', sans-serif";
+  title.style.fontWeight = '300';
+  title.style.fontSize = '18px';
+  title.style.marginBottom = '20px';
+  title.style.marginTop = '5px';
+  title.style.textAlign = 'center';
 
-        let allPts = [];
+  const densityWrapper = document.createElement('div');
+  densityWrapper.style.marginBottom = '15px';
 
-        for (let i = 0; i < cols; i++) {
-          const line = firstPoemLines[i];
-          const colX = centerX + (i - (cols - 1) / 2) * colGap;
-          const topY = groupTop + (i * POEM_STEP_DOWN);
+  const densityLabel = document.createElement('label');
+  densityLabel.innerText = 'Density';
+  densityLabel.style.color = 'rgba(255, 255, 255, 0.9)';
+  densityLabel.style.fontFamily = "'Raleway', sans-serif";
+  densityLabel.style.fontSize = '13px';
+  densityLabel.style.display = 'block';
+  densityLabel.style.marginBottom = '8px';
 
-          for (let j = 0; j < line.length; j++) {
-            const ch = line[j];
-            if (ch.trim() === "") continue;
+  const densitySlider = document.createElement('input');
+  densitySlider.type = 'range';
+  densitySlider.min = '0.05';
+  densitySlider.max = '1.0';
+  densitySlider.step = '0.05';
+  densitySlider.value = pointSettings.sampleFactor;
+  densitySlider.style.width = '100%';
+  densitySlider.style.height = '6px';
+  densitySlider.style.backgroundColor = 'rgba(80, 80, 80, 0.8)';
+  densitySlider.style.borderRadius = '3px';
+  densitySlider.style.outline = 'none';
+  densitySlider.style.cursor = 'pointer';
+  densitySlider.style.webkitAppearance = 'none';
+  densitySlider.style.appearance = 'none';
+ 
+  const densitySliderStyle = document.createElement('style');
+  densitySliderStyle.textContent = `
+    #custom-gui-container input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(200, 200, 200, 0.9);
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    #custom-gui-container input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(200, 200, 200, 0.9);
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+  `;
+  document.head.appendChild(densitySliderStyle);
 
-            const pts = buildPoemPoints([ch], font, fontSize, topY + j * fontSize, colX, pointSettings);
-            allPts.push(...pts);
-          }
-        }
+  densitySlider.addEventListener('input', (e) => {
+    pointSettings.sampleFactor = parseFloat(e.target.value);
+    updatePoemPoints();
+  });
 
-        poemPoints = allPts;
-      }
-    });
+  densityWrapper.appendChild(densityLabel);
+  densityWrapper.appendChild(densitySlider);
 
-  gui.add(pointSettings, 'pointSize', 1, 10, 1).name('Size');
+  // Size Control
+  const sizeWrapper = document.createElement('div');
+  sizeWrapper.style.marginBottom = '15px';
 
-  const colorWrapper = document.createElement("div");
-  colorWrapper.style.display = "flex";
-  colorWrapper.style.flexDirection = "column";
-  colorWrapper.style.gap = "6px";
-  colorWrapper.style.marginBottom = "14px";
+  const sizeLabel = document.createElement('label');
+  sizeLabel.innerText = 'Size';
+  sizeLabel.style.color = 'rgba(255, 255, 255, 0.9)';
+  sizeLabel.style.fontFamily = "'Raleway', sans-serif";
+  sizeLabel.style.fontSize = '13px';
+  sizeLabel.style.display = 'block';
+  sizeLabel.style.marginBottom = '8px';
 
-  const colorLabel = document.createElement("label");
-  colorLabel.innerText = "Color";
-  colorLabel.style.fontSize = "13px";
-  colorLabel.style.fontWeight = "500";
+  const sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.min = '1';
+  sizeSlider.max = '10';
+  sizeSlider.step = '1';
+  sizeSlider.value = pointSettings.pointSize;
+  sizeSlider.style.width = '100%';
+  sizeSlider.style.height = '6px';
+  sizeSlider.style.backgroundColor = 'rgba(80, 80, 80, 0.8)';
+  sizeSlider.style.borderRadius = '3px';
+  sizeSlider.style.outline = 'none';
+  sizeSlider.style.cursor = 'pointer';
+  sizeSlider.style.webkitAppearance = 'none';
+  sizeSlider.style.appearance = 'none';
 
-  const colorInput = document.createElement("input");
-  colorInput.type = "color";
+  sizeSlider.addEventListener('input', (e) => {
+    pointSettings.pointSize = parseInt(e.target.value);
+  });
+
+  sizeWrapper.appendChild(sizeLabel);
+  sizeWrapper.appendChild(sizeSlider);
+
+  // Color Control
+  const colorWrapper = document.createElement('div');
+  colorWrapper.style.marginBottom = '20px';
+
+  const colorLabel = document.createElement('label');
+  colorLabel.innerText = 'Color';
+  colorLabel.style.color = 'rgba(255, 255, 255, 0.9)';
+  colorLabel.style.fontFamily = "'Raleway', sans-serif";
+  colorLabel.style.fontSize = '13px';
+  colorLabel.style.display = 'block';
+  colorLabel.style.marginBottom = '8px';
+
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
   colorInput.value = rgbToHex(pointSettings.color[0], pointSettings.color[1], pointSettings.color[2]);
-  colorInput.style.width = "100%";
-  colorInput.style.height = "36px";
-  colorInput.style.border = "none";
-  colorInput.style.borderRadius = "6px";
-  colorInput.style.cursor = "pointer";
-  colorInput.style.background = "none";
+  colorInput.style.width = '100%';
+  colorInput.style.height = '40px';
+  colorInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+  colorInput.style.borderRadius = '8px';
+  colorInput.style.cursor = 'pointer';
+  colorInput.style.backgroundColor = 'transparent';
 
-  colorInput.addEventListener("input", (e) => {
+  colorInput.addEventListener('input', (e) => {
     const hex = e.target.value;
     pointSettings.color = hexToRgbArray(hex);
   });
@@ -1072,29 +1262,92 @@ function setupGUI() {
   colorWrapper.appendChild(colorLabel);
   colorWrapper.appendChild(colorInput);
 
-  gui.domElement.querySelector(".children").appendChild(colorWrapper);
+  // Apply Button
+  const applyBtn = document.createElement('button');
+  applyBtn.innerText = 'Apply';
+  applyBtn.style.width = '100%';
+  applyBtn.style.padding = '12px';
+  applyBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+  applyBtn.style.color = 'white';
+  applyBtn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+  applyBtn.style.borderRadius = '8px';
+  applyBtn.style.fontFamily = "'Raleway', sans-serif";
+  applyBtn.style.fontSize = '14px';
+  applyBtn.style.cursor = 'pointer';
+  applyBtn.style.transition = 'all 0.3s ease';
 
-  const applyBtn = document.createElement("button");
-  applyBtn.innerText = "Apply";
-  applyBtn.style.marginTop = "10px";
-  applyBtn.onclick = () => {
+  applyBtn.addEventListener('mouseenter', () => {
+    applyBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+    applyBtn.style.transform = 'translateY(-1px)';
+  });
+
+  applyBtn.addEventListener('mouseleave', () => {
+    applyBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+    applyBtn.style.transform = 'translateY(0)';
+  });
+
+  applyBtn.addEventListener('click', () => {
     applied = true;
-    gui.domElement.remove();
-    gui.destroy();
-    gui = null;
-  };
-  gui.domElement.querySelector(".children").appendChild(applyBtn);
+    closeCustomGUI();
+  });
 
-  const closeBtn = document.createElement("div");
-  closeBtn.innerHTML = "x";
-  closeBtn.classList.add("custom-close-btn");
-  closeBtn.onclick = () => {
-    gui.domElement.classList.remove('open');
-    gui.domElement.remove();
-    gui.destroy();
-    gui = null;
-  };
-  gui.domElement.appendChild(closeBtn);
+  content.appendChild(title);
+  content.appendChild(densityWrapper);
+  content.appendChild(sizeWrapper);
+  content.appendChild(colorWrapper);
+  content.appendChild(applyBtn);
+  guiContainer.appendChild(content);
+
+  document.body.appendChild(guiContainer);
+  
+  gui = { domElement: guiContainer, destroy: () => closeCustomGUI() };
+  
+  setTimeout(() => {
+    guiContainer.style.opacity = '1';
+  }, 10);
+
+  function updatePoemPoints() {
+    if (!applied && drawFirstPoem && showPoints) {
+      const cols = firstPoemLines.length || 1;
+      const centerX = width / 2;
+      const colGap = POEM_COL_GAP;
+      const fontSize = POEM_FONT_SIZE;
+
+      let colHeights = firstPoemLines.map(line => line.length * fontSize);
+      const maxColHeight = Math.max(...colHeights);
+      const totalHeight = maxColHeight + (cols - 1) * POEM_STEP_DOWN;
+      const groupTop = height / 2 - totalHeight / 2;
+
+      let allPts = [];
+
+      for (let i = 0; i < cols; i++) {
+        const line = firstPoemLines[i];
+        const colX = centerX + (i - (cols - 1) / 2) * colGap;
+        const topY = groupTop + (i * POEM_STEP_DOWN);
+
+        for (let j = 0; j < line.length; j++) {
+          const ch = line[j];
+          if (ch.trim() === "") continue;
+
+          const pts = buildPoemPoints([ch], font, fontSize, topY + j * fontSize, colX, pointSettings);
+          allPts.push(...pts);
+        }
+      }
+
+      poemPoints = allPts;
+    }
+  }
+
+  function closeCustomGUI() {
+    const container = document.getElementById('custom-gui-container');
+    if (container) {
+      container.style.opacity = '0';
+      setTimeout(() => {
+        container.remove();
+        gui = null;
+      }, 300);
+    }
+  }
 }
 
 function rgbToHex(r, g, b) {
@@ -1111,23 +1364,20 @@ function hexToRgbArray(hex) {
 function drawEndPhase() {
   if (!mergedPoints.length) return;
 
-  // Only draw points if we haven't finished dissolving
   if (!showEndText) {
     noStroke();
     
     for (let p of mergedPoints) {
-      // Use individual point's dissolve alpha if it exists, otherwise use 1
       const alpha = (p.dissolveAlpha !== undefined ? p.dissolveAlpha : 1) * 255;
       
-      if (alpha > 5) { // Only draw if there's still some alpha
+      if (alpha > 5) {
         fill(
           p.color ? p.color[0] : 255, 
           p.color ? p.color[1] : 255, 
           p.color ? p.color[2] : 255, 
           alpha
         );
-        
-        // Use shrinking size for dust effect
+
         const size = p.currentSize !== undefined ? p.currentSize : (p.pointSize || 3);
         circle(p.x, p.y, size);
       }
@@ -1186,4 +1436,352 @@ function showEndOptions() {
   overlay.appendChild(btnRestart);
 
   document.body.appendChild(overlay);
+}
+
+function createInstructionButton() {
+  const buttonContainer = document.createElement('div');
+  buttonContainer.id = 'instruction-button-container';
+  buttonContainer.style.position = 'fixed';
+  buttonContainer.style.bottom = '0';
+  buttonContainer.style.left = '0';
+  buttonContainer.style.zIndex = '1000';
+  buttonContainer.style.display = 'flex';
+  buttonContainer.style.alignItems = 'flex-end';
+  buttonContainer.style.gap = '15px';
+  buttonContainer.style.padding = '0';
+  buttonContainer.style.pointerEvents = 'none';
+
+  const quarterCircle = document.createElement('div');
+  quarterCircle.id = 'quarter-circle-button';
+  quarterCircle.style.width = '60px';
+  quarterCircle.style.height = '60px';
+  quarterCircle.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+  quarterCircle.style.borderRadius = '0 60px 0 0';
+  quarterCircle.style.cursor = 'pointer';
+  quarterCircle.style.pointerEvents = 'auto';
+  quarterCircle.style.transition = 'all 0.3s ease';
+  quarterCircle.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.1)';
+  quarterCircle.style.border = 'none';
+  quarterCircle.style.position = 'relative';
+
+  const instructionText = document.createElement('div');
+  instructionText.innerText = 'check this out before starting';
+  instructionText.style.color = 'rgba(255, 255, 255, 0.8)';
+  instructionText.style.fontSize = '12px';
+  instructionText.style.fontFamily = "'Raleway', sans-serif";
+  instructionText.style.fontWeight = '400';
+  instructionText.style.textAlign = 'left';
+  instructionText.style.lineHeight = '1.4';
+  instructionText.style.pointerEvents = 'none';
+  instructionText.style.userSelect = 'none';
+  instructionText.style.whiteSpace = 'nowrap';
+  instructionText.style.transition = 'opacity 0.3s ease';
+  instructionText.style.marginBottom = '20px'; 
+
+  quarterCircle.addEventListener('mouseenter', () => {
+    quarterCircle.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+    quarterCircle.style.boxShadow = '0 0 30px rgba(255, 255, 255, 0.5), inset 0 0 30px rgba(255, 255, 255, 0.15)';
+    quarterCircle.style.transform = 'scale(1.05)';
+  });
+
+  quarterCircle.addEventListener('mouseleave', () => {
+    quarterCircle.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+    quarterCircle.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.1)';
+    quarterCircle.style.transform = 'scale(1)';
+  });
+
+  quarterCircle.addEventListener('click', () => {
+    buttonContainer.style.display = 'none';
+    showInstructionModal();
+  });
+
+  buttonContainer.appendChild(quarterCircle);
+  buttonContainer.appendChild(instructionText);
+  document.body.appendChild(buttonContainer);
+}
+
+function showInstructionModal() {
+  if (instructionModalVisible) return;
+  
+  instructionModalVisible = true;
+  
+  const modal = document.createElement('div');
+  modal.id = 'instruction-modal';
+  modal.style.position = 'fixed';
+  modal.style.bottom = '20px';
+  modal.style.left = '20px';
+  modal.style.width = '350px';
+  modal.style.maxHeight = '70vh';
+  modal.style.backgroundColor = 'rgba(20, 20, 20, 0.95)';
+  modal.style.zIndex = '10000';
+  modal.style.opacity = '0';
+  modal.style.transform = 'translateY(100%)';
+  modal.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+  modal.style.borderRadius = '12px';
+  modal.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+  modal.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.1)';
+
+  const content = document.createElement('div');
+  content.style.padding = '20px';
+  content.style.width = '100%';
+  content.style.height = '100%';
+  content.style.overflowY = 'auto';
+  content.style.borderRadius = '12px';
+  content.style.position = 'relative';
+  content.style.boxSizing = 'border-box';
+
+  // Close button (X) - positioned inside the content area
+  const xButton = document.createElement('div');
+  xButton.innerHTML = '×';
+  xButton.style.position = 'absolute';
+  xButton.style.top = '8px';
+  xButton.style.right = '8px';
+  xButton.style.color = 'rgba(255, 255, 255, 0.7)';
+  xButton.style.fontSize = '18px';
+  xButton.style.cursor = 'pointer';
+  xButton.style.zIndex = '10001';
+  xButton.style.transition = 'all 0.3s ease';
+  xButton.style.lineHeight = '1';
+  xButton.style.width = '24px';
+  xButton.style.height = '24px';
+  xButton.style.display = 'flex';
+  xButton.style.alignItems = 'center';
+  xButton.style.justifyContent = 'center';
+  xButton.style.borderRadius = '50%';
+  xButton.addEventListener('mouseenter', () => {
+    xButton.style.color = 'white';
+    xButton.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+    xButton.style.transform = 'scale(1.1)';
+  });
+  xButton.addEventListener('mouseleave', () => {
+    xButton.style.color = 'rgba(255, 255, 255, 0.7)';
+    xButton.style.backgroundColor = 'transparent';
+    xButton.style.transform = 'scale(1)';
+  });
+  xButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideInstructionModal();
+  });
+
+  const title = document.createElement('h2');
+  title.innerHTML = 'step-by-step to<br>experience 間 (Ma)';
+  title.style.color = 'white';
+  title.style.fontFamily = "'Raleway', sans-serif";
+  title.style.fontWeight = '300';
+  title.style.fontSize = '18px';
+  title.style.marginBottom = '15px';
+  title.style.marginTop = '5px';
+  title.style.textAlign = 'center';
+  title.style.width = '100%';
+  title.style.boxSizing = 'border-box';
+  title.style.position = 'relative';
+  title.style.left = '-12px'; // Offset to account for X button and center properly
+
+  const instructions = document.createElement('div');
+  instructions.style.color = 'rgba(255, 255, 255, 0.9)';
+  instructions.style.fontFamily = "'Raleway', sans-serif";
+  instructions.style.fontSize = '13px';
+  instructions.style.lineHeight = '1.4';
+  instructions.style.marginBottom = '15px';
+  
+  instructions.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <ul style="margin: 0; padding: 0; list-style: none; font-family: 'Raleway', sans-serif;">
+        <li style="margin-bottom: 10px; font-size: 13px; line-height: 1.4;">1. <strong>scroll</strong> to move to the next 俳句 (haiku)</li>
+        <li style="margin-bottom: 10px; font-size: 13px; line-height: 1.4;">2. <strong>click</strong> a 俳句 to see a change</li>
+        <li style="margin-bottom: 10px; font-size: 13px; line-height: 1.4;">3. <strong>press SPACE</strong> to reveal the 五大 (godai — five elements) shapes in the 五輪塔 (gorintō)</li>
+        <li style="margin-bottom: 10px; font-size: 13px; line-height: 1.4;">4. complete each 俳句 before moving to the next</li>
+        <li style="margin-bottom: 10px; font-size: 13px; line-height: 1.4;">5. <strong>press E</strong> to see the transformation of the 五輪塔 (after completing all poems)</li>
+        <li style="margin-bottom: 10px; font-size: 13px; line-height: 1.4;">6. <strong>press M</strong> to end your journey</li>
+      </ul>
+    </div>
+
+    <div style="margin-bottom: 0; font-style: italic; text-align: left; color: rgba(255, 255, 255, 0.7); font-size: 12px; font-family: 'Raleway', sans-serif;">
+      <p style="margin: 0 0 5px 0;">note:</p>
+      <p style="margin: 0 0 3px 0;">1. <strong>press T</strong> for English translation</p>
+      <p style="margin: 0;">2. <strong>hover the godai navigation</strong> for English translation</p>
+    </div>
+  `;
+
+  content.appendChild(xButton);
+  content.appendChild(title);
+  content.appendChild(instructions);
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+
+  setTimeout(() => {
+    modal.style.opacity = '1';
+    modal.style.transform = 'translateY(0)';
+  }, 10);
+
+  const escapeHandler = (e) => {
+    if (e.key === 'Escape') {
+      hideInstructionModal();
+      document.removeEventListener('keydown', escapeHandler);
+    }
+  };
+  document.addEventListener('keydown', escapeHandler);
+}
+
+function hideInstructionModal() {
+  const modal = document.getElementById('instruction-modal');
+  if (modal) {
+    modal.style.opacity = '0';
+    modal.style.transform = 'translateY(100%)';
+    setTimeout(() => {
+      modal.remove();
+      instructionModalVisible = false;
+
+      const buttonContainer = document.getElementById('instruction-button-container');
+      if (buttonContainer) {
+
+        buttonContainer.innerHTML = '';
+
+        const quarterCircle = document.createElement('div');
+        quarterCircle.id = 'quarter-circle-button';
+        quarterCircle.style.width = '60px';
+        quarterCircle.style.height = '60px';
+        quarterCircle.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        quarterCircle.style.borderRadius = '0 60px 0 0';
+        quarterCircle.style.cursor = 'pointer';
+        quarterCircle.style.pointerEvents = 'auto';
+        quarterCircle.style.transition = 'all 0.3s ease';
+        quarterCircle.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.1)';
+        quarterCircle.style.border = 'none';
+        quarterCircle.style.position = 'relative';
+
+        quarterCircle.addEventListener('mouseenter', () => {
+          quarterCircle.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+          quarterCircle.style.boxShadow = '0 0 30px rgba(255, 255, 255, 0.5), inset 0 0 30px rgba(255, 255, 255, 0.15)';
+          quarterCircle.style.transform = 'scale(1.05)';
+        });
+
+        quarterCircle.addEventListener('mouseleave', () => {
+          quarterCircle.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+          quarterCircle.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.1)';
+          quarterCircle.style.transform = 'scale(1)';
+        });
+
+        quarterCircle.addEventListener('click', () => {
+          buttonContainer.style.display = 'none';
+          showInstructionModal();
+        });
+
+        buttonContainer.appendChild(quarterCircle);
+        buttonContainer.style.display = 'flex';
+      }
+    }, 300);
+  }
+}
+
+function canAccessPoem(poemIndex) {
+  if (poemIndex === 0) return true;
+  
+  const canAccess = completedPoems.includes(poemIndex - 1);
+  console.log(`Can access poem ${poemIndex}:`, canAccess, 'Completed poems:', completedPoems);
+  return canAccess;
+}
+
+function shouldBlockScroll() {
+  return false;
+}
+
+function scrollToLastAccessiblePoem() {
+  let lastAccessible = 0;
+  for (let i = 0; i < HAIKUS.length; i++) {
+    if (canAccessPoem(i)) {
+      lastAccessible = i;
+    } else {
+      break;
+    }
+  }
+  
+  console.log(`Scrolling back to last accessible poem: ${lastAccessible}`);
+  setTimeout(() => {
+    const targetSection = document.getElementById(`sec-${lastAccessible}`);
+    if (targetSection) {
+      targetSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, 100);
+}
+
+function getCurrentPoemSection() {
+  const scrollPosition = window.scrollY + window.innerHeight / 2;
+  
+  for (let i = 0; i < HAIKUS.length; i++) {
+    const section = document.getElementById(`sec-${i}`);
+    if (section) {
+      const rect = section.getBoundingClientRect();
+      const sectionTop = rect.top + window.scrollY;
+      const sectionBottom = sectionTop + rect.height;
+      
+      if (scrollPosition >= sectionTop && scrollPosition <= sectionBottom) {
+        return i;
+      }
+    }
+  }
+  return 0;
+}
+
+
+function setupGodaiTooltips() {
+  const godaiTranslations = [
+    { japanese: '地', english: 'Earth' },
+    { japanese: '水', english: 'Water' },
+    { japanese: '火', english: 'Fire' },
+    { japanese: '風', english: 'Wind' },
+    { japanese: '空', english: 'Void' }
+  ];
+
+  if (!godaiButtons || godaiButtons.length === 0) {
+    console.log('Godai buttons not found, retrying...');
+    setTimeout(setupGodaiTooltips, 100);
+    return;
+  }
+
+  console.log('Setting up tooltips for', godaiButtons.length, 'buttons');
+
+  godaiButtons.forEach((button, index) => {
+    if (index < godaiTranslations.length) {
+      const translation = godaiTranslations[index];
+
+      const originalContent = button.innerHTML;
+      
+      const translationEl = document.createElement('div');
+      translationEl.className = 'godai-translation';
+      translationEl.innerText = translation.english;
+      translationEl.style.fontSize = '10px';
+      translationEl.style.color = 'rgba(128, 128, 128, 0)';
+      translationEl.style.fontFamily = "'Raleway', sans-serif";
+      translationEl.style.fontWeight = '300';
+      translationEl.style.transition = 'color 0.3s ease';
+      translationEl.style.marginTop = '2px';
+      translationEl.style.lineHeight = '1';
+      
+      button.innerHTML = '';
+      button.style.display = 'flex';
+      button.style.flexDirection = 'column';
+      button.style.alignItems = 'center';
+      button.style.justifyContent = 'center';
+      button.style.textAlign = 'center';
+
+      const japaneseEl = document.createElement('div');
+      japaneseEl.innerText = translation.japanese;
+      button.appendChild(japaneseEl);
+
+      button.appendChild(translationEl);
+      
+      console.log('Added translation for button', index, ':', translation.english);
+
+      button.addEventListener('mouseenter', () => {
+        console.log('Hovering over button', index);
+        translationEl.style.color = 'rgba(128, 128, 128, 1)';
+      });
+
+      button.addEventListener('mouseleave', () => {
+        console.log('Left button', index);
+        translationEl.style.color = 'rgba(128, 128, 128, 0)';
+      });
+    }
+  });
 }
